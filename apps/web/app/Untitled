@@ -1,0 +1,719 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { ethers } from "ethers";
+
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend
+} from "chart.js";
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+
+const ENGINE = process.env.NEXT_PUBLIC_ENGINE_ADDRESS;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
+const USD = process.env.NEXT_PUBLIC_USD_ADDRESS;
+const WBNB = process.env.NEXT_PUBLIC_WBNB_ADDRESS;
+const PAIR = process.env.NEXT_PUBLIC_PAIR_ADDRESS;
+
+const engineAbi = [
+  "event ChaosTriggered(uint256 indexed roundId, uint8 eventType, uint256 severity, address indexed trigger)",
+  "event DecisionMade(uint256 indexed roundId, uint8 actionType, uint256 riskScore, uint256 tradeBps, uint256 confidence, bytes32 metadataHash)",
+  "event SwapExecuted(uint256 indexed roundId, address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut, bytes32 txTag)",
+  "function roundId() view returns (uint256)",
+  "function getBalances() view returns (uint256 wbnbBal, uint256 usdBal)",
+  "function triggerFeeWei() view returns (uint256)",
+  "function triggerChaos(uint256 userSeed) payable returns (uint256)"
+];
+
+const pairAbi = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32)"
+];
+
+function actionLabel(n) {
+  const map = ["HOLD", "SWAP_WBNB_TO_USD", "SWAP_USD_TO_WBNB"];
+  return map[n] ?? `UNKNOWN_${n}`;
+}
+
+function eventTypeLabel(n) {
+  const map = ["VOLATILITY_SPIKE", "LIQUIDITY_DRAIN", "FAKE_PUMP", "FAKE_DUMP", "CALM"];
+  return map[n] ?? `UNKNOWN_${n}`;
+}
+
+const bscTestnetTx = (hash) => `https://testnet.bscscan.com/tx/${hash}`;
+const bscTestnetAddr = (addr) => `https://testnet.bscscan.com/address/${addr}`;
+
+function ValueChart({ points }) {
+  const data = {
+    labels: points.map((p) => p.label),
+    datasets: [
+      {
+        label: "Treasury value",
+        data: points.map((p) => p.value),
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.35
+      }
+    ]
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        ticks: { display: false },
+        grid: { display: false }
+      },
+      y: {
+        ticks: { color: "rgba(245,247,251,0.55)" },
+        grid: { color: "rgba(255,255,255,0.06)" }
+      }
+    }
+  };
+
+  return (
+    <div style={{ height: 260 }}>
+      <Line data={data} options={options} />
+    </div>
+  );
+}
+
+function MiniKpi({ title, value, sub }) {
+  return (
+    <div className="card" style={{ boxShadow: "none" }}>
+      <div className="cardInner">
+        <div className="muted" style={{ fontSize: 12, fontWeight: 800 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 900, marginTop: 6 }}>{value}</div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          {sub}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RiskBar({ score }) {
+  const s = Math.max(0, Math.min(100, Number(score || 0)));
+  return (
+    <div>
+      <div
+        style={{
+          height: 12,
+          borderRadius: 999,
+          background: "rgba(255,255,255,0.06)",
+          border: "1px solid var(--border)",
+          overflow: "hidden"
+        }}
+      >
+        <div
+          style={{
+            width: `${s}%`,
+            height: 12,
+            background: "linear-gradient(90deg, var(--accent), rgba(215,242,28,0.35))"
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Low Risk
+        </span>
+        <span className="muted" style={{ fontSize: 12 }}>
+          High Risk
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function trim(x) {
+  const n = Number(x || 0);
+  return n.toFixed(4);
+}
+
+function safeAddr(a) {
+  if (!a) return "";
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+export default function Page() {
+  const [walletAddr, setWalletAddr] = useState("");
+  const [chainOk, setChainOk] = useState(false);
+
+  const [wbnbBal, setWbnbBal] = useState("0");
+  const [usdBal, setUsdBal] = useState("0");
+
+  const [triggerFee, setTriggerFee] = useState("0");
+  const [lastRound, setLastRound] = useState("0");
+
+  const [feed, setFeed] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const [valuePoints, setValuePoints] = useState([]);
+  const [baselineValue, setBaselineValue] = useState(null);
+
+  const [lastDecision, setLastDecision] = useState(null);
+
+  const readProvider = useMemo(() => (RPC_URL ? new ethers.JsonRpcProvider(RPC_URL) : null), []);
+  const readEngine = useMemo(() => {
+    if (!readProvider || !ENGINE) return null;
+    return new ethers.Contract(ENGINE, engineAbi, readProvider);
+  }, [readProvider]);
+
+  function pushFeed(item) {
+    setFeed((prev) => [item, ...prev].slice(0, 30));
+  }
+
+  async function computeValueInUsdUnits(wbnbWei, usdWei) {
+    if (!PAIR || !readProvider) return null;
+    if (!USD || !WBNB) return null;
+
+    const pair = new ethers.Contract(PAIR, pairAbi, readProvider);
+    const [r0, r1] = await pair.getReserves();
+    const t0 = await pair.token0();
+    const t1 = await pair.token1();
+
+    const reserve0 = BigInt(r0.toString());
+    const reserve1 = BigInt(r1.toString());
+
+    let usdReserve, wbnbReserve;
+
+    const t0l = t0.toLowerCase();
+    const t1l = t1.toLowerCase();
+
+    if (t0l === USD.toLowerCase() && t1l === WBNB.toLowerCase()) {
+      usdReserve = reserve0;
+      wbnbReserve = reserve1;
+    } else if (t1l === USD.toLowerCase() && t0l === WBNB.toLowerCase()) {
+      usdReserve = reserve1;
+      wbnbReserve = reserve0;
+    } else {
+      return null;
+    }
+
+    if (wbnbReserve === 0n) return null;
+
+    const wbnbValueInUsdWei = (BigInt(wbnbWei.toString()) * usdReserve) / wbnbReserve;
+    const totalUsdWei = wbnbValueInUsdWei + BigInt(usdWei.toString());
+
+    return Number(ethers.formatUnits(totalUsdWei, 18));
+  }
+
+  function computeScore(points, baseline) {
+    const current = points.length ? points[points.length - 1].value : baseline;
+    const changePct = baseline ? ((current - baseline) / baseline) * 100 : 0;
+    const score = Math.max(0, Math.min(100, 100 + changePct));
+    return score.toFixed(2);
+  }
+
+  function computeChange(points, baseline) {
+    const current = points.length ? points[points.length - 1].value : baseline;
+    const changePct = baseline ? ((current - baseline) / baseline) * 100 : 0;
+    return `${changePct.toFixed(2)} percent`;
+  }
+
+  async function refreshBasics() {
+    if (!readEngine) return;
+
+    const [w, u] = await readEngine.getBalances();
+    setWbnbBal(ethers.formatUnits(w, 18));
+    setUsdBal(ethers.formatUnits(u, 18));
+
+    const fee = await readEngine.triggerFeeWei();
+    setTriggerFee(ethers.formatUnits(fee, 18));
+
+    const rid = await readEngine.roundId();
+    setLastRound(rid.toString());
+
+    const v = await computeValueInUsdUnits(w, u);
+    if (v !== null) {
+      setValuePoints((prev) => {
+        const next = [...prev, { label: `R${rid.toString()}`, value: v }].slice(-25);
+        return next;
+      });
+      setBaselineValue((b) => (b === null ? v : b));
+    }
+  }
+
+  async function connectWallet() {
+    const eth = window.ethereum;
+    if (!eth) {
+      alert("MetaMask not found");
+      return;
+    }
+    const browserProvider = new ethers.BrowserProvider(eth);
+    await browserProvider.send("eth_requestAccounts", []);
+    const signer = await browserProvider.getSigner();
+    const addr = await signer.getAddress();
+    setWalletAddr(addr);
+
+    const net = await browserProvider.getNetwork();
+    setChainOk(net.chainId.toString() === "97");
+  }
+
+  async function ensureWalletReady() {
+    const eth = window.ethereum;
+    if (!eth) throw new Error("MetaMask not found");
+
+    const browserProvider = new ethers.BrowserProvider(eth);
+    await browserProvider.send("eth_requestAccounts", []);
+
+    const net = await browserProvider.getNetwork();
+    const chainId = net.chainId.toString();
+
+    if (chainId !== "97") {
+      try {
+        await eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x61" }]
+        });
+      } catch {
+        throw new Error("Switch to BSC Testnet (chainId 97) in MetaMask");
+      }
+    }
+
+    const signer = await browserProvider.getSigner();
+    const addr = await signer.getAddress();
+    setWalletAddr(addr);
+
+    const net2 = await browserProvider.getNetwork();
+    setChainOk(net2.chainId.toString() === "97");
+
+    return browserProvider;
+  }
+
+  async function triggerChaos() {
+    setBusy(true);
+    try {
+      const browserProvider = await ensureWalletReady();
+      const signer = await browserProvider.getSigner();
+      const engine = new ethers.Contract(ENGINE, engineAbi, signer);
+
+      const feeWei = await engine.triggerFeeWei();
+      const seed = Math.floor(Math.random() * 1e9);
+
+      const tx = await engine.triggerChaos(seed, { value: feeWei });
+
+      pushFeed({
+        kind: "TX_SENT",
+        title: "Trigger sent",
+        detail: tx.hash,
+        link: bscTestnetTx(tx.hash),
+        ts: new Date().toLocaleTimeString()
+      });
+
+      const rcpt = await tx.wait();
+
+      pushFeed({
+        kind: "TX_MINED",
+        title: "Trigger mined",
+        detail: rcpt.hash,
+        link: bscTestnetTx(rcpt.hash),
+        ts: new Date().toLocaleTimeString()
+      });
+
+      await refreshBasics();
+    } catch (e) {
+      console.error(e);
+      alert(e?.shortMessage || e?.message || "Trigger failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!ENGINE || !RPC_URL || !USD || !WBNB) {
+      pushFeed({
+        kind: "ERROR",
+        title: "Missing env",
+        detail: "Check .env.local NEXT_PUBLIC values",
+        ts: new Date().toLocaleTimeString()
+      });
+      return;
+    }
+
+    refreshBasics().catch(() => {});
+
+    const interval = setInterval(() => refreshBasics().catch(() => {}), 7000);
+
+    if (window.ethereum) {
+      const handler = async () => {
+        try {
+          const browserProvider = new ethers.BrowserProvider(window.ethereum);
+          const net = await browserProvider.getNetwork();
+          setChainOk(net.chainId.toString() === "97");
+        } catch {}
+      };
+
+      window.ethereum.on("chainChanged", handler);
+      window.ethereum.on("accountsChanged", handler);
+      handler();
+
+      return () => {
+        clearInterval(interval);
+        window.ethereum.removeListener("chainChanged", handler);
+        window.ethereum.removeListener("accountsChanged", handler);
+        if (readEngine) {
+          try {
+            readEngine.removeAllListeners();
+          } catch {}
+        }
+      };
+    }
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!readEngine) return;
+
+    const onChaos = (roundId, eventType, severity, trigger, ev) => {
+      pushFeed({
+        kind: "CHAOS",
+        title: `ChaosTriggered #${roundId.toString()}`,
+        detail: `${eventTypeLabel(Number(eventType))} severity ${severity.toString()}`,
+        link: bscTestnetTx(ev.log.transactionHash),
+        ts: new Date().toLocaleTimeString()
+      });
+      setLastRound(roundId.toString());
+    };
+
+    const onDecision = async (roundId, actionType, riskScore, tradeBps, confidence, meta, ev) => {
+      const metaHash = meta?.toString?.() || String(meta);
+
+      pushFeed({
+        kind: "DECISION",
+        title: `Decision #${roundId.toString()}`,
+        detail: `${actionLabel(Number(actionType))} risk ${riskScore.toString()} tradeBps ${tradeBps.toString()} conf ${confidence.toString()}`,
+        link: bscTestnetTx(ev.log.transactionHash),
+        ts: new Date().toLocaleTimeString()
+      });
+
+      try {
+        const res = await fetch(`/api/decision?hash=${metaHash}`);
+        if (res.ok) {
+          const data = await res.json();
+          setLastDecision({
+            roundId: roundId.toString(),
+            action: actionLabel(Number(actionType)),
+            riskScore: riskScore.toString(),
+            tradeBps: tradeBps.toString(),
+            confidence: confidence.toString(),
+            explain: data?.decision?.explain || "",
+            raw: data?.decision || null,
+            metaHash
+          });
+          return;
+        }
+      } catch {}
+
+      setLastDecision({
+        roundId: roundId.toString(),
+        action: actionLabel(Number(actionType)),
+        riskScore: riskScore.toString(),
+        tradeBps: tradeBps.toString(),
+        confidence: confidence.toString(),
+        explain: "",
+        raw: null,
+        metaHash
+      });
+    };
+
+    const onSwap = (roundId, tokenIn, tokenOut, amountIn, amountOut, tag, ev) => {
+      pushFeed({
+        kind: "SWAP",
+        title: `Swap #${roundId.toString()}`,
+        detail: `in ${ethers.formatUnits(amountIn, 18)} out ${ethers.formatUnits(amountOut, 18)}`,
+        link: bscTestnetTx(ev.log.transactionHash),
+        ts: new Date().toLocaleTimeString()
+      });
+      refreshBasics().catch(() => {});
+    };
+
+    readEngine.on("ChaosTriggered", onChaos);
+    readEngine.on("DecisionMade", onDecision);
+    readEngine.on("SwapExecuted", onSwap);
+
+    return () => {
+      readEngine.off("ChaosTriggered", onChaos);
+      readEngine.off("DecisionMade", onDecision);
+      readEngine.off("SwapExecuted", onSwap);
+    };
+  }, [readEngine]);
+
+  const currentValue = valuePoints?.length ? valuePoints[valuePoints.length - 1].value : 0;
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div className="card">
+        <div
+          className="cardInner"
+          style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center" }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 12,
+                background: "rgba(215,242,28,0.14)",
+                border: "1px solid rgba(215,242,28,0.35)",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 900
+              }}
+            >
+              C
+            </div>
+            <div>
+              <div className="h1">Chaos Engine</div>
+              <div className="sub">
+                Autonomous onchain treasury on BSC testnet
+                {" "}
+                <a href={bscTestnetAddr(ENGINE)} target="_blank" rel="noreferrer">
+                  {ENGINE ? `Engine ${safeAddr(ENGINE)}` : ""}
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <span className="pill">Round {lastRound}</span>
+            <span className="pill">{chainOk ? "BSC Testnet" : "Wrong network"}</span>
+
+            <button className="btn" onClick={connectWallet}>
+              {walletAddr ? safeAddr(walletAddr) : "Connect wallet"}
+            </button>
+
+            <button className="btn btnPrimary" onClick={triggerChaos} disabled={busy}>
+              {busy ? "Triggering…" : `Trigger chaos (fee ${triggerFee} BNB)`}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mainGrid">
+        <div className="card">
+          <div className="cardInner">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div>
+                <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>Wallet Value</div>
+                <div className="big">{Number.isFinite(currentValue) ? currentValue.toFixed(2) : "0.00"}</div>
+                <div style={{ marginTop: 6, color: "rgba(245,247,251,0.7)", fontSize: 13 }}>
+                  {baselineValue === null ? "Collecting baseline" : `Change ${computeChange(valuePoints, baselineValue)}`}
+                </div>
+              </div>
+
+              <div className="tabs">
+                {["1h", "8h", "1d", "1w", "1m", "6m", "1y"].map((t) => (
+                  <button key={t} className={`tab ${t === "6m" ? "tabActive" : ""}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              {valuePoints.length < 2 ? (
+                <div className="muted">Collecting points</div>
+              ) : (
+                <div className="card" style={{ borderRadius: 22, boxShadow: "none" }}>
+                  <div className="cardInner">
+                    <ValueChart points={valuePoints} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 12 }} className="kpiGrid">
+              <MiniKpi title="Treasury WBNB" value={trim(wbnbBal)} sub="Live balance" />
+              <MiniKpi title="Treasury mUSD" value={trim(usdBal)} sub="Live balance" />
+              <MiniKpi
+                title="Survival Score"
+                value={baselineValue === null ? "—" : computeScore(valuePoints, baselineValue)}
+                sub="Baseline aware"
+              />
+              <MiniKpi
+                title="Net Change"
+                value={baselineValue === null ? "—" : computeChange(valuePoints, baselineValue)}
+                sub="Since baseline"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 14 }}>
+          <div className="card">
+            <div className="cardInner">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="mid">Portfolio Risk Score</div>
+                <div className="muted" style={{ fontSize: 12 }}>Updated just now</div>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <RiskBar score={lastDecision ? Number(lastDecision.riskScore) : 0} />
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="cardInner">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="mid">AI Decision</div>
+                <div className="muted" style={{ fontSize: 12 }}>Latest</div>
+              </div>
+
+              {!lastDecision ? (
+                <div className="muted" style={{ marginTop: 12 }}>Waiting for first decision</div>
+              ) : (
+                <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+                  <div style={{ fontWeight: 900 }}>Round {lastDecision.roundId}</div>
+
+                  <div>
+                    <span className="muted">Action</span>
+                    {" "}
+                    <span style={{ fontWeight: 900 }}>{lastDecision.action}</span>
+                  </div>
+
+                  <div>
+                    <span className="muted">Risk score</span>
+                    {" "}
+                    <span style={{ fontWeight: 900 }}>{lastDecision.riskScore}</span>
+                  </div>
+
+                  <div>
+                    <span className="muted">Trade</span>
+                    {" "}
+                    <span style={{ fontWeight: 900 }}>{(Number(lastDecision.tradeBps) / 100).toFixed(0)} percent</span>
+                  </div>
+
+                  <div>
+                    <span className="muted">Confidence</span>
+                    {" "}
+                    <span style={{ fontWeight: 900 }}>{lastDecision.confidence}</span>
+                  </div>
+
+                  <div className="muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
+                    {lastDecision.explain || "No explanation stored yet"}
+                  </div>
+
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(JSON.stringify(lastDecision.raw || {}, null, 2));
+                      } catch {}
+                    }}
+                    style={{ width: "fit-content" }}
+                  >
+                    Copy AI JSON
+                  </button>
+
+                  <details>
+                    <summary style={{ cursor: "pointer", color: "rgba(245,247,251,0.8)" }}>Raw AI JSON</summary>
+                    <pre
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        background: "rgba(255,255,255,0.03)",
+                        padding: 12,
+                        borderRadius: 14,
+                        border: "1px solid var(--border)",
+                        marginTop: 10
+                      }}
+                    >
+                      {JSON.stringify(lastDecision.raw, null, 2)}
+                    </pre>
+                  </details>
+
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    metadataHash {lastDecision.metaHash}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="cardInner">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="mid">Activity</div>
+                <div style={{ color: "var(--accent)", fontWeight: 800, fontSize: 12 }}>View all</div>
+              </div>
+
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                {feed.length === 0 ? (
+                  <div className="muted">No events yet. Trigger chaos.</div>
+                ) : (
+                  feed.slice(0, 6).map((x, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: 12,
+                        borderRadius: 16,
+                        border: "1px solid var(--border)",
+                        background: "rgba(255,255,255,0.02)"
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: "4px 8px",
+                              borderRadius: 999,
+                              border: "1px solid var(--border)",
+                              background: "rgba(255,255,255,0.02)",
+                              fontWeight: 800,
+                              color: "rgba(245,247,251,0.75)"
+                            }}
+                          >
+                            {x.kind}
+                          </span>
+                          <div style={{ fontWeight: 900 }}>{x.title}</div>
+                        </div>
+                        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{x.detail}</div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <div className="muted" style={{ fontSize: 12 }}>{x.ts}</div>
+                        {x.link ? (
+                          <a href={x.link} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                            View tx
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="cardInner">
+              <div className="mid">Quick links</div>
+              <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                <a href={bscTestnetAddr(ENGINE)} target="_blank" rel="noreferrer">Engine on BscScan</a>
+                {PAIR ? <a href={bscTestnetAddr(PAIR)} target="_blank" rel="noreferrer">V2 Pair on BscScan</a> : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
