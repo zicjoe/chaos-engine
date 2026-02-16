@@ -85,14 +85,7 @@ function lastTxLink(feed) {
   return item?.link || "";
 }
 
-function PrototypeChart({ points }) {
-  const labels = points.map((p) => p.t);
-  const values = points.map((p) => p.v);
 
-  const bars = values.map((v, i) => {
-    const base = values[Math.max(0, i - 1)] ?? v;
-    return Math.abs(v - base) + v * 0.02;
-  });
 
   const data = {
     labels,
@@ -429,7 +422,7 @@ export default function Page() {
 
   const [busy, setBusy] = useState(false);
 
-  const [chartPoints, setChartPoints] = useState([]);
+  
   const [range, setRange] = useState("6m");
 
   const [strategy, setStrategy] = useState(() => {
@@ -504,11 +497,7 @@ export default function Page() {
     setTriggerFee(ethers.formatUnits(fee, 18));
 
     const totalValueProxy = Number(usd);
-    setChartPoints((prev) => {
-      const next = [...prev, { t: new Date().toLocaleTimeString(), v: totalValueProxy }].slice(-28);
-      return next;
-    });
-  }
+    
 
   async function readWalletState() {
     const eth = window.ethereum;
