@@ -1,3 +1,3 @@
-import { Chart as ChartJS, registerables } from "chart.js";
+import "chart.js/auto"
 
 ChartJS.register(...registerables);
