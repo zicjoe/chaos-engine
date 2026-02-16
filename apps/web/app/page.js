@@ -2,30 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
-import "@/lib/chartjs";
-import { Line, Doughnut } from "react-chartjs-2";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend
-} from "chart.js";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Tooltip,
-  Legend
-);
+
 console.log("env check", {
     rpc: process.env.NEXT_PUBLIC_RPC_URL,
     engine: process.env.NEXT_PUBLIC_ENGINE_ADDRESS,
@@ -1256,9 +1234,7 @@ export default function Page() {
                 </div>
               </div>
 
-              <div style={{ marginTop: 14 }}>
-                {chartPoints.length < 2 ? <div style={{ opacity: 0.6 }}>Collecting chart data</div> : <PrototypeChart points={chartPoints} />}
-              </div>
+              
 
               <StressBar score={lastDecision?.risk || 0} />
 
