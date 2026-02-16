@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
-
+import "@/lib/chartjs";
 import { Line, Doughnut } from "react-chartjs-2";
 import {
   Chart as ChartJS,
