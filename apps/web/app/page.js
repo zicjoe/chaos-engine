@@ -26,6 +26,11 @@ ChartJS.register(
   Tooltip,
   Legend
 );
+console.log("env check", {
+    rpc: process.env.NEXT_PUBLIC_RPC_URL,
+    engine: process.env.NEXT_PUBLIC_ENGINE_ADDRESS,
+    usd: process.env.NEXT_PUBLIC_USD_ADDRESS
+  });
 
 const ENGINE = process.env.NEXT_PUBLIC_ENGINE_ADDRESS;
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
