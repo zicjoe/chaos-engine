@@ -3,13 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 
-
-console.log("env check", {
-    rpc: process.env.NEXT_PUBLIC_RPC_URL,
-    engine: process.env.NEXT_PUBLIC_ENGINE_ADDRESS,
-    usd: process.env.NEXT_PUBLIC_USD_ADDRESS
-  });
-
 const ENGINE = process.env.NEXT_PUBLIC_ENGINE_ADDRESS;
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 const WBNB = process.env.NEXT_PUBLIC_WBNB_ADDRESS;
@@ -31,7 +24,6 @@ const engineAbi = [
   "function getBalances() view returns (uint256 wbnbBal, uint256 usdBal)",
   "function triggerFeeWei() view returns (uint256)",
   "function triggerChaos(uint256 userSeed) payable returns (uint256)"
-  
 ];
 
 const erc20Abi = [
@@ -83,122 +75,6 @@ function eventTypeLabel(n) {
 function lastTxLink(feed) {
   const item = (feed || []).find((x) => x?.link);
   return item?.link || "";
-}
-
-
-
-  const data = {
-    labels,
-    datasets: [
-      {
-        type: "bar",
-        data: bars,
-        borderWidth: 0,
-        backgroundColor: "rgba(255,255,255,0.06)",
-        barPercentage: 1.0,
-        categoryPercentage: 1.0
-      },
-      {
-        type: "line",
-        data: values,
-        borderColor: "#d7f21c",
-        backgroundColor: "rgba(215,242,28,0.15)",
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.35
-      }
-    ]
-  };
-
-  const options = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { enabled: true } },
-    scales: {
-      x: { grid: { display: false }, ticks: { display: false } },
-      y: {
-        grid: { color: "rgba(255,255,255,0.06)" },
-        ticks: { color: "rgba(245,247,251,0.55)" }
-      }
-    }
-  };
-
-  return (
-    <div
-      style={{
-        height: 260,
-        borderRadius: 18,
-        overflow: "hidden",
-        background: "rgba(255,255,255,0.02)",
-        border: "1px solid #232833",
-        padding: 12
-      }}
-    >
-      <Line data={data} options={options} />
-    </div>
-  );
-}
-
-function AllocationDonut({ wbnb, usd, strategy }) {
-  const w = Math.max(0, Number(wbnb || 0));
-  const u = Math.max(0, Number(usd || 0));
-  const total = w + u || 1;
-
-  const wPct = (w / total) * 100;
-  const uPct = (u / total) * 100;
-
-  const targetMap = {
-    Conservative: { w: 10, u: 90 },
-    Balanced: { w: 30, u: 70 },
-    Aggressive: { w: 55, u: 45 }
-  };
-
-  const tgt = targetMap[strategy] || targetMap.Balanced;
-
-  const data = {
-    labels: ["WBNB", "mUSD"],
-    datasets: [
-      {
-        data: [wPct, uPct],
-        backgroundColor: ["rgba(215,242,28,0.9)", "rgba(255,255,255,0.10)"],
-        borderColor: ["rgba(215,242,28,0.35)", "rgba(255,255,255,0.08)"],
-        borderWidth: 1,
-        cutout: "72%"
-      }
-    ]
-  };
-
-  const options = {
-    plugins: { legend: { display: false } },
-    responsive: true,
-    maintainAspectRatio: false
-  };
-
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, alignItems: "center" }}>
-      <div style={{ height: 120 }}>
-        <Doughnut data={data} options={options} />
-      </div>
-
-      <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontWeight: 900 }}>Allocation</div>
-
-        <div style={{ display: "flex", justifyContent: "space-between", opacity: 0.75 }}>
-          <span>WBNB</span>
-          <span>{wPct.toFixed(1)}%</span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between", opacity: 0.75 }}>
-          <span>mUSD</span>
-          <span>{uPct.toFixed(1)}%</span>
-        </div>
-
-        <div style={{ fontSize: 12, opacity: 0.6 }}>
-          Target for {strategy}: WBNB {tgt.w}% mUSD {tgt.u}%
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function StressBar({ score }) {
@@ -309,12 +185,7 @@ function FeedTile({ item }) {
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 12, opacity: 0.6 }}>{item.ts}</div>
           {item.link ? (
-            <a
-              href={item.link}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 12, color: "rgba(215,242,28,0.95)", fontWeight: 900 }}
-            >
+            <a href={item.link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "rgba(215,242,28,0.95)", fontWeight: 900 }}>
               View
             </a>
           ) : null}
@@ -329,18 +200,6 @@ const card = () => ({
   border: "1px solid #232833",
   borderRadius: 18,
   padding: 18
-});
-
-const logoBox = () => ({
-  width: 36,
-  height: 36,
-  borderRadius: 12,
-  background: "rgba(215,242,28,.12)",
-  border: "1px solid rgba(215,242,28,.35)",
-  display: "grid",
-  placeItems: "center",
-  fontWeight: 900,
-  color: "rgba(245,247,251,0.95)"
 });
 
 const titleStyle = () => ({ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" });
@@ -405,7 +264,6 @@ export default function Page() {
   const [mode, setMode] = useState("Protocol");
   const [pendingRound, setPendingRound] = useState(null);
 
-
   const [walletAddr, setWalletAddr] = useState("");
   const [chainOk, setChainOk] = useState(false);
   const [chainId, setChainId] = useState("");
@@ -422,24 +280,12 @@ export default function Page() {
 
   const [busy, setBusy] = useState(false);
 
-  
   const [range, setRange] = useState("6m");
 
   const [strategy, setStrategy] = useState(() => {
     if (typeof window === "undefined") return "Balanced";
     return localStorage.getItem("CE_STRATEGY") || "Balanced";
   });
-
-  useEffect(() => {
-    if (mode !== "Personal") return;
-    if (!chainOk || !walletAddr) return;
-  
-    refreshPersonalBalances().catch((e) => {
-      console.log("personal balance refresh failed", e?.message || e);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, chainOk, walletAddr]);
-  
 
   useEffect(() => {
     if (typeof window !== "undefined") localStorage.setItem("CE_STRATEGY", strategy);
@@ -458,10 +304,20 @@ export default function Page() {
     slippageBps: 75
   });
 
+  useEffect(() => {
+    if (mode !== "Personal") return;
+    if (!chainOk || !walletAddr) return;
+
+    refreshPersonalBalances().catch((e) => {
+      console.log("personal balance refresh failed", e?.message || e);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, chainOk, walletAddr]);
+
   const provider = useMemo(() => {
     if (!RPC_URL) return null;
     return new ethers.JsonRpcProvider(RPC_URL);
-  }, []);
+  }, [RPC_URL]);
 
   const readEngine = useMemo(() => {
     if (!provider || !ENGINE) return null;
@@ -495,9 +351,7 @@ export default function Page() {
     setUsdBal(usd);
     setLastRound(rid.toString());
     setTriggerFee(ethers.formatUnits(fee, 18));
-
-    const totalValueProxy = Number(usd);
-    
+  }
 
   async function readWalletState() {
     const eth = window.ethereum;
@@ -806,13 +660,7 @@ export default function Page() {
       const minOutWei = (BigInt(outWei.toString()) * BigInt(10000 - slippageBps)) / 10000n;
       const deadline = Math.floor(Date.now() / 1000) + 60 * 10;
 
-      const swapTx = await router.swapExactTokensForTokens(
-        amountInWei,
-        minOutWei,
-        path,
-        user,
-        deadline
-      );
+      const swapTx = await router.swapExactTokensForTokens(amountInWei, minOutWei, path, user, deadline);
 
       pushFeed({
         kind: "TX_SENT",
@@ -882,7 +730,6 @@ export default function Page() {
       });
       setLastRound(roundId.toString());
       setPendingRound(roundId.toString());
-
     };
 
     const onDecision = (roundId, actionType, riskScore, tradeBps, confidence, meta, ev) => {
@@ -936,42 +783,29 @@ export default function Page() {
       <div style={card()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <div
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 14
-  }}
->
-  <div
-    style={{
-      width: 64,
-      height: 64,
-      borderRadius: 16,
-      background: "rgba(215,242,28,0.08)",
-      border: "1px solid rgba(215,242,28,0.25)",
-      display: "grid",
-      placeItems: "center",
-      boxShadow: "0 0 18px rgba(215,242,28,0.15)",
-      overflow: "hidden"
-    }}
-  >
-    <img
-      src="/logo.png"
-      alt="Chaos Engine"
-      style={{
-        width: "85%",
-        height: "85%",
-        objectFit: "contain"
-      }}
-    />
-  </div>
-</div>
-             <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 16,
+                  background: "rgba(215,242,28,0.08)",
+                  border: "1px solid rgba(215,242,28,0.25)",
+                  display: "grid",
+                  placeItems: "center",
+                  boxShadow: "0 0 18px rgba(215,242,28,0.15)",
+                  overflow: "hidden"
+                }}
+              >
+                <img src="/logo.png" alt="Chaos Engine" style={{ width: "85%", height: "85%", objectFit: "contain" }} />
+              </div>
+            </div>
+
+            <div>
               <div style={titleStyle()}>Chaos Engine</div>
-               <div style={subStyle()}>
-                 Dual mode AI risk engine on BSC testnet{" "}
-                 {ENGINE ? (
+              <div style={subStyle()}>
+                Dual mode AI risk engine on BSC testnet{" "}
+                {ENGINE ? (
                   <a href={bscTestnetAddr(ENGINE)} target="_blank" rel="noreferrer" style={{ color: "rgba(215,242,28,0.95)", fontWeight: 800 }}>
                     Engine {safeAddr(ENGINE)}
                   </a>
@@ -1026,11 +860,7 @@ export default function Page() {
                 {busy ? "Triggering…" : `Trigger Chaos (fee ${Number(triggerFee || 0).toFixed(4)} BNB)`}
               </button>
             ) : (
-              <button
-                style={btnPrimary(!chainOk || !walletAddr || personal.analyzing)}
-                disabled={!chainOk || !walletAddr || personal.analyzing}
-                onClick={runPersonalAnalysis}
-              >
+              <button style={btnPrimary(!chainOk || !walletAddr || personal.analyzing)} disabled={!chainOk || !walletAddr || personal.analyzing} onClick={runPersonalAnalysis}>
                 {personal.analyzing ? "Analyzing…" : "Stress My Portfolio"}
               </button>
             )}
@@ -1121,29 +951,19 @@ export default function Page() {
                 <div style={sectionTitle()}>AI recommendation</div>
 
                 {!personal.recommendation ? (
-                  <div style={{ marginTop: 12, opacity: 0.65 }}>
-                    Click Stress My Portfolio to generate a plan.
-                  </div>
+                  <div style={{ marginTop: 12, opacity: 0.65 }}>Click Stress My Portfolio to generate a plan.</div>
                 ) : (
                   <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
                     <Kpi title="Action" value={personal.recommendation.action} sub="Suggested" />
                     <Kpi title="Trade percent" value={`${(personal.recommendation.tradeBps / 100).toFixed(0)}%`} sub="Position size" />
                     <Kpi title="Confidence" value={`${personal.recommendation.confidence}`} sub="Model certainty" />
-                    <div style={{ opacity: 0.75, fontSize: 12, lineHeight: 1.5 }}>
-                      {personal.recommendation.explain}
-                    </div>
+                    <div style={{ opacity: 0.75, fontSize: 12, lineHeight: 1.5 }}>{personal.recommendation.explain}</div>
 
-                    <button
-                      style={btnPrimary(!chainOk || !walletAddr || personal.executing)}
-                      disabled={!chainOk || !walletAddr || personal.executing}
-                      onClick={executePersonalRebalance}
-                    >
+                    <button style={btnPrimary(!chainOk || !walletAddr || personal.executing)} disabled={!chainOk || !walletAddr || personal.executing} onClick={executePersonalRebalance}>
                       {personal.executing ? "Executing…" : "Approve Rebalance"}
                     </button>
 
-                    <div style={{ fontSize: 12, opacity: 0.6 }}>
-                      Swaps happen directly from your wallet via Pancake Router.
-                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>Swaps happen directly from your wallet via Pancake Router.</div>
                   </div>
                 )}
               </div>
@@ -1186,11 +1006,7 @@ export default function Page() {
             </div>
 
             <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-              {filteredFeed.length === 0 ? (
-                <div style={{ opacity: 0.6 }}>No events yet.</div>
-              ) : (
-                filteredFeed.slice(0, 8).map((f, i) => <FeedTile key={i} item={f} />)
-              )}
+              {filteredFeed.length === 0 ? <div style={{ opacity: 0.6 }}>No events yet.</div> : filteredFeed.slice(0, 8).map((f, i) => <FeedTile key={i} item={f} />)}
             </div>
           </div>
         </div>
@@ -1208,9 +1024,7 @@ export default function Page() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
                 <div>
                   <div style={sectionTitle()}>Wallet Value</div>
-                  <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: "-0.03em", marginTop: 6 }}>
-                    ${Number(usdBal || 0).toFixed(2)}
-                  </div>
+                  <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: "-0.03em", marginTop: 6 }}>${Number(usdBal || 0).toFixed(2)}</div>
                   <div style={{ marginTop: 6, fontSize: 13, opacity: 0.7 }}>Updated just now</div>
                 </div>
 
@@ -1223,12 +1037,56 @@ export default function Page() {
                 </div>
               </div>
 
-              
+              <div style={{ marginTop: 14 }}>
+                <div
+                  style={{
+                    height: 260,
+                    borderRadius: 18,
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid #232833",
+                    padding: 12,
+                    display: "grid",
+                    placeItems: "center",
+                    color: "rgba(245,247,251,0.65)",
+                    fontWeight: 800
+                  }}
+                >
+                  Chart removed for deployment stability
+                </div>
+              </div>
 
               <StressBar score={lastDecision?.risk || 0} />
 
               <div style={{ marginTop: 14 }}>
-                <AllocationDonut wbnb={wbnbBal} usd={usdBal} strategy={strategy} />
+                <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, alignItems: "center" }}>
+                  <div
+                    style={{
+                      height: 120,
+                      borderRadius: 18,
+                      border: "1px solid #232833",
+                      background: "rgba(255,255,255,0.02)",
+                      display: "grid",
+                      placeItems: "center",
+                      color: "rgba(245,247,251,0.65)",
+                      fontWeight: 800
+                    }}
+                  >
+                    Donut removed
+                  </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ fontWeight: 900 }}>Allocation</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", opacity: 0.75 }}>
+                      <span>WBNB</span>
+                      <span>{Number(wbnbBal || 0).toFixed(4)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", opacity: 0.75 }}>
+                      <span>mUSD</span>
+                      <span>{Number(usdBal || 0).toFixed(4)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>Target profile: {strategy}</div>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 14 }}>
@@ -1257,11 +1115,7 @@ export default function Page() {
                 </div>
 
                 <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
-                  {filteredFeed.length === 0 ? (
-                    <div style={{ opacity: 0.6 }}>No events yet. Trigger chaos.</div>
-                  ) : (
-                    filteredFeed.slice(0, 6).map((f, i) => <FeedTile key={i} item={f} />)
-                  )}
+                  {filteredFeed.length === 0 ? <div style={{ opacity: 0.6 }}>No events yet. Trigger chaos.</div> : filteredFeed.slice(0, 6).map((f, i) => <FeedTile key={i} item={f} />)}
                 </div>
               </div>
 
@@ -1313,9 +1167,7 @@ export default function Page() {
                   <Kpi title="Confidence" value={`${lastDecision.confidence}`} sub="Model certainty" />
                 </div>
 
-                <div style={{ opacity: 0.7, fontSize: 12 }}>
-                  metadataHash {lastDecision.metaHash}
-                </div>
+                <div style={{ opacity: 0.7, fontSize: 12 }}>metadataHash {lastDecision.metaHash}</div>
               </div>
             )}
           </div>
