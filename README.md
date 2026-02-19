@@ -147,3 +147,49 @@ It lays the foundation for AI-governed treasury infrastructure in DeFi.
 - Dynamic trigger incentives  
 
 
+## 🧪 Testnet Setup (Required for Demo)
+
+This project runs on **BNB Chain Testnet**.
+
+### Get Testnet BNB
+Request testnet BNB from:
+https://testnet.bnbchain.org/faucet-smart
+
+You need BNB for:
+- Triggering chaos (protocol mode)
+- Executing personal swaps
+
+---
+
+### Treasury Structure (Protocol Mode)
+
+The protocol treasury is an onchain contract that holds:
+
+- WBNB (volatile asset)
+- mUSD (stable asset)
+
+Liquidity for WBNB ↔ mUSD was manually seeded via PancakeSwap V2 on BSC Testnet.
+
+The AI agent does NOT custody user funds.
+It only manages the protocol treasury balance.
+
+All decisions are:
+- Triggered onchain
+- Executed onchain
+- Verifiable on BscScan
+
+
+## 👤 Personal Mode (User Wallet)
+
+Personal mode interacts directly with the user's wallet.
+
+To test:
+
+1. Get testnet BNB
+3. Get mUSD using the Mint 1000 mUSD button (test token)
+2. Swap small amount tBNB to WBNB  via Pancake testnet
+3. Click "Stress My Portfolio"
+4. Approve rebalance if desired
+
+Swaps execute via Pancake Router directly from user wallet.
+Chaos Engine never takes custody.
