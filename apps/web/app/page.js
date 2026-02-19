@@ -1296,7 +1296,7 @@ export default function Page() {
               </div>
 
               <div style={{ marginTop: 14 }}>
-                {chartPoints.length < 2 ? <div style={{ opacity: 0.6 }}>Collecting chart data</div> : <PrototypeChart points={chartPoints} />}
+                Chart remove temporarily for fast deployment
               </div>
 
               <StressBar score={lastDecision?.risk || 0} />
